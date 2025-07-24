@@ -1,0 +1,1 @@
+It's worth thinking about rewriting tools themselves to make them simpler. Refactoring a complex tool into two simpler tools can make it more obvious to the LLM what it's supposed to do with the tools. Then it will end up being better at planning with the tools.

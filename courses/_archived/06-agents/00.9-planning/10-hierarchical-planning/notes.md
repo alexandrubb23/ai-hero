@@ -1,0 +1,1 @@
+One way to think about model planning is to plan hierarchically. You get one agent to plan for the quarter, then another agent to plan for the month, another one to plan for the week. That way, you get the benefit of high-level planning, seeing the big picture, but also understanding the day-to-day stuff.

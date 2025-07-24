@@ -1,0 +1,20 @@
+{
+  "name": "@mattpocockuk/mcp-server-example",
+  "version": "0.0.4",
+  "description": "An example of a MCP server",
+  "bin": {
+    "mcp-server-example": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "ci": "npm run build",
+    "prepublishOnly": "npm run ci"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.7.0"
+  }
+}

@@ -1,0 +1,1 @@
+The idea of web browsing is to make sure the models data doesn't go stale. Web browsing can allow your agent to reference up to date information, but select your Internet APIs with care. You can also open up your agent to the worst parts of the Internet.

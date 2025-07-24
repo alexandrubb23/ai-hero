@@ -1,0 +1,1 @@
+One thing that's interesting about AI agents is that they have different definitions of efficiency. For a human to check 100 web pages it's extremely inefficient. For an AI agent to check 100 web pages it's very very efficient because it can parallelize it.

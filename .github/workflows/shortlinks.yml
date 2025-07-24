@@ -1,0 +1,24 @@
+name: Shortlink Sync
+on:
+  push:
+    paths:
+      - "internal/shortlinks/shortlinks.json"
+    branches:
+      - main
+
+jobs:
+  shortlink-sync:
+    name: Shortlink Sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: "pnpm"
+
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm run shortlinks:sync
+        env:
+          AI_HERO_TOKEN: ${{ secrets.AI_HERO_TOKEN }}

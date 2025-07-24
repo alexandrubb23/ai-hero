@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "path-aliases": {
+      "type": "object",
+      "patternProperties": {
+        "^[^/].*$": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "$schema": {
+      "type": "string"
+    }
+  },
+  "required": ["path-aliases"],
+  "additionalProperties": false
+}

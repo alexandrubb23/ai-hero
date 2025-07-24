@@ -1,0 +1,1 @@
+In the ReAct paper, they describe using a self-consistency baseline for augmenting chain-of-thought prompting. They sampled 21 chain-of-thought trajectories with decoding temperature of 0.7 during inference and adopted the majority answer, which was found to consistently boost performance over chain-of-thought. Worth investigating.

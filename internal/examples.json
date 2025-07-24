@@ -1,0 +1,12 @@
+{
+  "$schema": "./examples-schema.json",
+  "path-aliases": {
+    "v": "vercel-ai-sdk",
+    "ai-sdk": "vercel-ai-sdk",
+    "p": "projects",
+    "a": "agents",
+    "ui": "ui-patterns",
+    "t": "tools",
+    "mcp": "model-context-protocol"
+  }
+}
