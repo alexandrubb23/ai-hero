@@ -70,7 +70,7 @@ export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
                 className="rounded bg-gray-700 px-4 py-2 text-white hover:bg-gray-600 focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 disabled:hover:bg-gray-700"
               >
                 {isLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="a size-4 animate-spin" />
                 ) : (
                   "Send"
                 )}
