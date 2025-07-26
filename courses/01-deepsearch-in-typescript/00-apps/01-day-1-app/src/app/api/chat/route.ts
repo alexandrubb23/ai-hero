@@ -1,42 +1,83 @@
 import type { Message } from "ai";
+import {
+  appendResponseMessages,
+  createDataStreamResponse,
+  streamText,
+} from "ai";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { streamText, createDataStreamResponse } from "ai";
-import { NextResponse } from "next/server";
 import { model } from "~/model";
 import { searchSerper } from "~/serper";
 import { auth } from "~/server/auth";
+import { db } from "~/server/db";
+import { upsertChat } from "~/server/db/queries";
+import { chats } from "~/server/db/schema";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  const session = await auth();
+
+  if (!session) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const body = (await request.json()) as {
     messages: Array<Message>;
+    chatId?: string;
   };
 
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { messages, chatId } = body;
+
+  if (!messages.length) {
+    return new Response("No messages provided", { status: 400 });
+  }
+
+  // If no chatId is provided, create a new chat with the user's message
+  let currentChatId = chatId;
+  if (!currentChatId) {
+    const newChatId = crypto.randomUUID();
+    await upsertChat({
+      userId: session.user.id,
+      chatId: newChatId,
+      title: messages[messages.length - 1]!.content.slice(0, 50) + "...",
+      messages: messages, // Only save the user's message initially
+    });
+    currentChatId = newChatId;
+  } else {
+    // Verify the chat belongs to the user
+    const chat = await db.query.chats.findFirst({
+      where: eq(chats.id, currentChatId),
+    });
+    if (!chat || chat.userId !== session.user.id) {
+      return new Response("Chat not found or unauthorized", { status: 404 });
+    }
   }
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      const { messages } = body;
+      // If this is a new chat, send the chat ID to the frontend
+      if (!chatId) {
+        dataStream.writeData({
+          type: "NEW_CHAT_CREATED",
+          chatId: currentChatId,
+        });
+      }
 
       const result = streamText({
         model,
         messages,
         maxSteps: 10,
-        system: `You are a helpful AI assistant that can search the web to provide accurate, up-to-date information. 
+        system: `You are a helpful AI assistant with access to real-time web search capabilities. When answering questions:
 
-Always use the search web tool to find current information before answering questions. 
+1. Always search the web for up-to-date information when relevant
+2. ALWAYS format URLs as markdown links using the format [title](url)
+3. Be thorough but concise in your responses
+4. If you're unsure about something, search the web to verify
+5. When providing information, always include the source where you found it using markdown links
+6. Never include raw URLs - always use markdown link format
 
-IMPORTANT: When providing information from search results, you MUST cite your sources using proper markdown link formatting: [descriptive title](full_url). Never show raw URLs - always format them as clickable markdown links.
-
-Examples of proper citation format:
-- [OpenAI Announces GPT-4](https://openai.com/blog/gpt-4)
-- [Latest Climate Change Report](https://example.com/climate-report)
-
-Be comprehensive in your responses and include multiple sources when relevant. Format ALL URLs as markdown links throughout your entire response.`,
+Remember to use the searchWeb tool whenever you need to find current information.`,
         tools: {
           searchWeb: {
             parameters: z.object({
@@ -56,13 +97,33 @@ Be comprehensive in your responses and include multiple sources when relevant. F
             },
           },
         },
+        onFinish: async ({ response }) => {
+          // Merge the existing messages with the response messages
+          const updatedMessages = appendResponseMessages({
+            messages,
+            responseMessages: response.messages,
+          });
+
+          const lastMessage = messages[messages.length - 1];
+          if (!lastMessage) {
+            return;
+          }
+
+          // Save the complete chat history
+          await upsertChat({
+            userId: session.user.id,
+            chatId: currentChatId,
+            title: lastMessage.content.slice(0, 50) + "...",
+            messages: updatedMessages,
+          });
+        },
       });
 
       result.mergeIntoDataStream(dataStream);
     },
     onError: (e) => {
       console.error(e);
-      return "Oops, an error occured!";
+      return "Oops, an error occurred!";
     },
   });
 }
