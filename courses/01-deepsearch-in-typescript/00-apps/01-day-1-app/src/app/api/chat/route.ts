@@ -1,7 +1,9 @@
 import type { Message } from "ai";
 import { appendResponseMessages, createDataStream, streamText } from "ai";
 import { eq } from "drizzle-orm";
+import { Langfuse } from "langfuse";
 import { z } from "zod";
+import { env } from "~/env";
 import { model } from "~/model";
 import { searchSerper } from "~/serper";
 import { auth } from "~/server/auth";
@@ -13,7 +15,6 @@ import {
   upsertChat,
 } from "~/server/db/queries";
 import { chats } from "~/server/db/schema";
-import { getLangfuse } from "~/server/langfuse";
 import { getStreamContext } from "~/server/stream-context";
 
 export const maxDuration = 60;
@@ -24,6 +25,11 @@ export async function POST(request: Request) {
   if (!session) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  // Initialize Langfuse client with environment
+  const langfuse = new Langfuse({
+    environment: env.NODE_ENV,
+  });
 
   const body = (await request.json()) as {
     messages: Array<Message>;
@@ -68,12 +74,11 @@ export async function POST(request: Request) {
         });
       }
 
-      // Initialize Langfuse trace
-      const langfuse = getLangfuse();
-      const trace = langfuse?.trace({
-        name: "chat-completion",
-        userId: session.user.id,
+      // Create Langfuse trace with user and session information
+      const trace = langfuse.trace({
         sessionId: chatId,
+        name: "chat",
+        userId: session.user.id,
         metadata: {
           isNewChat,
           messageCount: messages.length,
@@ -86,8 +91,9 @@ export async function POST(request: Request) {
         maxSteps: 10,
         experimental_telemetry: {
           isEnabled: true,
-          functionId: "chat-completion",
+          functionId: "agent",
           metadata: {
+            langfuseTraceId: trace.id,
             userId: session.user.id,
             chatId: chatId,
             isNewChat,
@@ -160,6 +166,9 @@ Remember to use the searchWeb tool whenever you need to find current information
             title: lastMessage.content.slice(0, 50) + "...",
             messages: updatedMessages,
           });
+
+          // Flush the trace to Langfuse
+          await langfuse.flushAsync();
         },
       });
 
@@ -199,9 +208,13 @@ export async function GET(request: Request) {
 
   const userId = session.user.id;
 
-  // Initialize Langfuse trace for stream resumption
-  const langfuse = getLangfuse();
-  const trace = langfuse?.trace({
+  // Initialize Langfuse client with environment
+  const langfuse = new Langfuse({
+    environment: env.NODE_ENV,
+  });
+
+  // Create Langfuse trace for stream resumption
+  const trace = langfuse.trace({
     name: "stream-resumption",
     userId: userId,
     sessionId: chatId,
@@ -293,6 +306,9 @@ export async function GET(request: Request) {
       messageRestored: true,
     },
   });
+
+  // Flush the trace to Langfuse
+  await langfuse.flushAsync();
 
   // Return the stream
   return new Response(restoredStream, { status: 200 });
