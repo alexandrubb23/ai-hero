@@ -1,18 +1,18 @@
-import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { relations, sql } from "drizzle-orm";
 import {
-  boolean,
   index,
   integer,
-  json,
   pgTableCreator,
   primaryKey,
-  serial,
   text,
   timestamp,
   varchar,
+  json,
+  boolean,
+  serial,
 } from "drizzle-orm/pg-core";
 import { type AdapterAccount } from "next-auth/adapters";
+import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
 /**
  * This is an example of how to use the multi-project schema feature of Drizzle ORM. Use the same
@@ -39,7 +39,6 @@ export const users = createTable("user", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
-  chats: many(chats),
 }));
 
 export const accounts = createTable(
@@ -98,71 +97,54 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, { fields: [sessions.userId], references: [users.id] }),
 }));
 
-export const chats = createTable(
-  "chat",
+export const verificationTokens = createTable(
+  "verification_token",
   {
-    id: varchar("id", { length: 255 })
-      .notNull()
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: varchar("user_id", { length: 255 })
-      .notNull()
-      .references(() => users.id),
-    title: varchar("title", { length: 255 }).notNull(),
-    createdAt: timestamp("created_at", {
+    identifier: varchar("identifier", { length: 255 }).notNull(),
+    token: varchar("token", { length: 255 }).notNull(),
+    expires: timestamp("expires", {
       mode: "date",
       withTimezone: true,
-    })
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: timestamp("updated_at", {
-      mode: "date",
-      withTimezone: true,
-    })
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
+    }).notNull(),
   },
-  (chat) => ({
-    userIdIdx: index("chat_user_id_idx").on(chat.userId),
-    createdAtIdx: index("chat_created_at_idx").on(chat.createdAt),
+  (vt) => ({
+    compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
   }),
 );
+
+export const chats = createTable("chat", {
+  id: varchar("id", { length: 255 })
+    .notNull()
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: varchar("user_id", { length: 255 })
+    .notNull()
+    .references(() => users.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updated_at", {
+    mode: "date",
+    withTimezone: true,
+  })
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});
 
 export const chatsRelations = relations(chats, ({ one, many }) => ({
   user: one(users, { fields: [chats.userId], references: [users.id] }),
   messages: many(messages),
-  streams: many(streams),
-}));
-
-export const streams = createTable(
-  "stream",
-  {
-    id: varchar("id", { length: 255 })
-      .notNull()
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    chatId: varchar("chat_id", { length: 255 })
-      .notNull()
-      .references(() => chats.id),
-    createdAt: timestamp("created_at", {
-      mode: "date",
-      withTimezone: true,
-    })
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-  },
-  (stream) => ({
-    chatIdIdx: index("stream_chat_id_idx").on(stream.chatId),
-    createdAtIdx: index("stream_created_at_idx").on(stream.createdAt),
-  }),
-);
-
-export const streamsRelations = relations(streams, ({ one }) => ({
-  chat: one(chats, { fields: [streams.chatId], references: [chats.id] }),
 }));
 
 export const messages = createTable("message", {
-  id: serial("id").primaryKey(),
+  id: varchar("id", { length: 255 })
+    .notNull()
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   chatId: varchar("chat_id", { length: 255 })
     .notNull()
     .references(() => chats.id),
@@ -181,21 +163,6 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   chat: one(chats, { fields: [messages.chatId], references: [chats.id] }),
 }));
 
-export const verificationTokens = createTable(
-  "verification_token",
-  {
-    identifier: varchar("identifier", { length: 255 }).notNull(),
-    token: varchar("token", { length: 255 }).notNull(),
-    expires: timestamp("expires", {
-      mode: "date",
-      withTimezone: true,
-    }).notNull(),
-  },
-  (vt) => ({
-    compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
-  }),
-);
-
 export declare namespace DB {
   export type User = InferSelectModel<typeof users>;
   export type NewUser = InferInsertModel<typeof users>;
@@ -206,17 +173,14 @@ export declare namespace DB {
   export type Session = InferSelectModel<typeof sessions>;
   export type NewSession = InferInsertModel<typeof sessions>;
 
+  export type VerificationToken = InferSelectModel<typeof verificationTokens>;
+  export type NewVerificationToken = InferInsertModel<
+    typeof verificationTokens
+  >;
+
   export type Chat = InferSelectModel<typeof chats>;
   export type NewChat = InferInsertModel<typeof chats>;
 
   export type Message = InferSelectModel<typeof messages>;
   export type NewMessage = InferInsertModel<typeof messages>;
-
-  export type Stream = InferSelectModel<typeof streams>;
-  export type NewStream = InferInsertModel<typeof streams>;
-
-  export type VerificationToken = InferSelectModel<typeof verificationTokens>;
-  export type NewVerificationToken = InferInsertModel<
-    typeof verificationTokens
-  >;
 }

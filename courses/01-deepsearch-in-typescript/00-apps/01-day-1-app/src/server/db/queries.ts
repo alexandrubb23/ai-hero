@@ -1,7 +1,7 @@
+import { db } from "./index.ts";
+import { chats, messages } from "./schema.ts";
 import type { Message } from "ai";
-import { and, eq } from "drizzle-orm";
-import { db } from ".";
-import { chats, messages, streams } from "./schema";
+import { eq, and } from "drizzle-orm";
 
 export const upsertChat = async (opts: {
   userId: string;
@@ -35,6 +35,7 @@ export const upsertChat = async (opts: {
   // Insert all messages
   await db.insert(messages).values(
     newMessages.map((message, index) => ({
+      id: crypto.randomUUID(),
       chatId,
       role: message.role,
       parts: message.parts,
@@ -64,10 +65,9 @@ export const getChat = async (opts: { userId: string; chatId: string }) => {
   return {
     ...chat,
     messages: chat.messages.map((message) => ({
-      id: message.id.toString(), // Convert serial ID to string for AI SDK
+      id: message.id,
       role: message.role,
-      content: "", // AI SDK requires content field, but we primarily use parts
-      parts: message.parts,
+      content: message.parts,
     })),
   };
 };
@@ -78,40 +78,5 @@ export const getChats = async (opts: { userId: string }) => {
   return await db.query.chats.findMany({
     where: eq(chats.userId, userId),
     orderBy: (chats, { desc }) => [desc(chats.updatedAt)],
-  });
-};
-
-export const createStream = async (opts: { chatId: string }) => {
-  const { chatId } = opts;
-
-  const streamId = crypto.randomUUID();
-
-  await db.insert(streams).values({
-    id: streamId,
-    chatId,
-  });
-
-  return streamId;
-};
-
-export const getStreamsByChatId = async (opts: {
-  chatId: string;
-  userId: string;
-}) => {
-  const { chatId, userId } = opts;
-
-  // First verify that the user owns the chat
-  const chat = await db.query.chats.findFirst({
-    where: and(eq(chats.id, chatId), eq(chats.userId, userId)),
-  });
-
-  if (!chat) {
-    throw new Error("Chat not found or access denied");
-  }
-
-  // Return all streams for this chat
-  return await db.query.streams.findMany({
-    where: eq(streams.chatId, chatId),
-    orderBy: (streams, { asc }) => [asc(streams.createdAt)],
   });
 };

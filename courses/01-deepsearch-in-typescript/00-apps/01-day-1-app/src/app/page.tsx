@@ -1,49 +1,41 @@
-import type { Message } from "ai";
-import { randomUUID } from "crypto";
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
-import { getChat, getChats } from "~/server/db/queries";
-import { AuthButton } from "../components/auth-button.tsx";
 import { ChatPage } from "./chat.tsx";
+import { AuthButton } from "../components/auth-button.tsx";
+import { getChats, getChat } from "~/server/db/queries";
+import type { Message } from "ai";
 
 export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<{ id?: string }>;
 }) {
-  const { id } = await searchParams;
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+  const { id: chatId } = await searchParams;
 
-  // Fetch chats for the sidebar if user is authenticated
+  // Fetch chats if user is authenticated
   const chats =
-    isAuthenticated && session?.user?.id
+    isAuthenticated && session.user?.id
       ? await getChats({ userId: session.user.id })
       : [];
 
-  // Determine chatId and isNewChat
-  const chatId = id ?? randomUUID();
-  const isNewChat = !id;
+  // Fetch active chat if chatId is present and user is authenticated
+  const activeChat =
+    chatId && isAuthenticated && session.user?.id
+      ? await getChat({ userId: session.user.id, chatId })
+      : null;
 
-  // Fetch the specific chat if there's an id parameter
-  let initialMessages: Message[] = [];
-  if (id && isAuthenticated && session?.user?.id) {
-    const chat = await getChat({ userId: session.user.id, chatId: id });
-    if (chat?.messages) {
-      initialMessages = chat.messages.map((msg) => ({
-        id: msg.id,
-        // msg.role is typed as string, so we need to cast it to the correct type
-        role: msg.role as "user" | "assistant",
-        // msg.parts is typed as unknown[], so we need to cast it to the correct type
-        parts: msg.parts as Message["parts"],
-        // content is not persisted, so we can safely pass an empty string,
-        // because parts are always present, and the AI SDK will use the parts to construct the content
-        content: "",
-      }));
-    }
-  }
+  // Map the messages to the correct format for useChat
+  const initialMessages =
+    activeChat?.messages.map((msg) => ({
+      id: msg.id,
+      role: msg.role as "user" | "assistant",
+      parts: msg.content as Message["parts"],
+      content: "",
+    })) ?? [];
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -55,10 +47,10 @@ export default async function HomePage({
             {isAuthenticated && (
               <Link
                 href="/"
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="flex size-8 items-center justify-center rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
                 title="New Chat"
               >
-                <PlusIcon className="h-5 w-5" />
+                <PlusIcon className="size-5" />
               </Link>
             )}
           </div>
@@ -70,7 +62,7 @@ export default async function HomePage({
                 <Link
                   href={`/?id=${chat.id}`}
                   className={`flex-1 rounded-lg p-3 text-left text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                    chat.id === id
+                    chat.id === chatId
                       ? "bg-gray-700"
                       : "hover:bg-gray-750 bg-gray-800"
                   }`}
@@ -96,11 +88,9 @@ export default async function HomePage({
       </div>
 
       <ChatPage
-        key={chatId}
-        isAuthenticated={isAuthenticated}
         userName={userName}
+        isAuthenticated={isAuthenticated}
         chatId={chatId}
-        isNewChat={isNewChat}
         initialMessages={initialMessages}
       />
     </div>
