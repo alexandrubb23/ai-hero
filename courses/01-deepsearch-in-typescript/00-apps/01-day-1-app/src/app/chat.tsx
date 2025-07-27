@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
 import { SignInModal } from "~/components/sign-in-modal";
+import { useAutoResume } from "~/hooks/useAutoResume";
 import { isNewChatCreated } from "~/utils/chat";
 
 interface ChatProps {
@@ -35,12 +36,23 @@ export const ChatPage = ({
     handleSubmit: originalHandleSubmit,
     isLoading,
     data,
+    experimental_resume,
+    setMessages,
   } = useChat({
+    id: chatId,
     body: {
       chatId,
       isNewChat,
     },
     initialMessages,
+  });
+
+  // Use auto-resume hook to handle stream resumption
+  useAutoResume({
+    initialMessages,
+    experimental_resume,
+    data,
+    setMessages,
   });
 
   // Listen for new chat creation and redirect

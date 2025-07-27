@@ -131,6 +131,34 @@ export const chats = createTable(
 export const chatsRelations = relations(chats, ({ one, many }) => ({
   user: one(users, { fields: [chats.userId], references: [users.id] }),
   messages: many(messages),
+  streams: many(streams),
+}));
+
+export const streams = createTable(
+  "stream",
+  {
+    id: varchar("id", { length: 255 })
+      .notNull()
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    chatId: varchar("chat_id", { length: 255 })
+      .notNull()
+      .references(() => chats.id),
+    createdAt: timestamp("created_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (stream) => ({
+    chatIdIdx: index("stream_chat_id_idx").on(stream.chatId),
+    createdAtIdx: index("stream_created_at_idx").on(stream.createdAt),
+  }),
+);
+
+export const streamsRelations = relations(streams, ({ one }) => ({
+  chat: one(chats, { fields: [streams.chatId], references: [chats.id] }),
 }));
 
 export const messages = createTable("message", {
@@ -183,6 +211,9 @@ export declare namespace DB {
 
   export type Message = InferSelectModel<typeof messages>;
   export type NewMessage = InferInsertModel<typeof messages>;
+
+  export type Stream = InferSelectModel<typeof streams>;
+  export type NewStream = InferInsertModel<typeof streams>;
 
   export type VerificationToken = InferSelectModel<typeof verificationTokens>;
   export type NewVerificationToken = InferInsertModel<

@@ -1,17 +1,19 @@
 import type { Message } from "ai";
-import {
-  appendResponseMessages,
-  createDataStreamResponse,
-  streamText,
-} from "ai";
+import { appendResponseMessages, createDataStream, streamText } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { model } from "~/model";
 import { searchSerper } from "~/serper";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
-import { upsertChat } from "~/server/db/queries";
+import {
+  createStream,
+  getChat,
+  getStreamsByChatId,
+  upsertChat,
+} from "~/server/db/queries";
 import { chats } from "~/server/db/schema";
+import { getStreamContext } from "~/server/stream-context";
 
 export const maxDuration = 60;
 
@@ -52,7 +54,10 @@ export async function POST(request: Request) {
     }
   }
 
-  return createDataStreamResponse({
+  // Create a stream in the database
+  const streamId = await createStream({ chatId });
+
+  const stream = createDataStream({
     execute: async (dataStream) => {
       // If this is a new chat, send the chat ID to the frontend
       if (isNewChat) {
@@ -117,11 +122,116 @@ Remember to use the searchWeb tool whenever you need to find current information
         },
       });
 
+      // Consume the stream to prevent it from being cut off
+      result.consumeStream();
+
       result.mergeIntoDataStream(dataStream);
     },
-    onError: (e) => {
-      console.error(e);
-      return "Oops, an error occurred!";
+  });
+
+  const streamContext = getStreamContext();
+
+  if (streamContext) {
+    return new Response(
+      await streamContext.resumableStream(streamId, () => stream),
+    );
+  } else {
+    return new Response(stream);
+  }
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const chatId = searchParams.get("chatId");
+
+  if (!chatId) {
+    return new Response("Missing chatId", {
+      status: 400,
+    });
+  }
+
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const userId = session.user.id;
+
+  // Check that the user is the owner of the chat and get streams
+  let streams;
+  try {
+    streams = await getStreamsByChatId({ chatId, userId });
+  } catch (error) {
+    return new Response("Chat not found or access denied", { status: 404 });
+  }
+
+  const recentStream = streams.at(-1);
+
+  if (!recentStream) {
+    return new Response("No stream found", {
+      status: 404,
+    });
+  }
+
+  const streamContext = getStreamContext();
+
+  const emptyDataStream = createDataStream({
+    execute: async (dataStream) => {},
+  });
+
+  if (streamContext) {
+    const resumedStream = await streamContext.resumableStream(
+      recentStream.id,
+      () => emptyDataStream,
+    );
+
+    // If the stream was resumed, return the stream
+    if (resumedStream) {
+      return new Response(resumedStream, {
+        status: 200,
+      });
+    }
+  }
+
+  // Use existing db helpers to get the most recent message
+  const chat = await getChat({
+    chatId,
+    userId,
+  });
+
+  if (!chat) {
+    return new Response("Chat not found", { status: 404 });
+  }
+
+  const mostRecentMessage = chat.messages.at(-1);
+
+  // If there are no messages, return an empty stream
+  if (!mostRecentMessage) {
+    return new Response(emptyDataStream, {
+      status: 200,
+    });
+  }
+
+  // If the most recent message is not an assistant message,
+  // return an empty stream
+  if (mostRecentMessage.role !== "assistant") {
+    return new Response(emptyDataStream, {
+      status: 200,
+    });
+  }
+
+  // If the stream was not resumed, create a new stream which
+  // writes some data to the stream to append the most recent message
+  const restoredStream = createDataStream({
+    execute: (buffer) => {
+      buffer.writeData({
+        type: "append-message",
+        message: JSON.stringify(mostRecentMessage),
+      });
     },
   });
+
+  // Return the stream
+  return new Response(restoredStream, { status: 200 });
 }
