@@ -13,6 +13,7 @@ import {
   upsertChat,
 } from "~/server/db/queries";
 import { chats } from "~/server/db/schema";
+import { getLangfuse } from "~/server/langfuse";
 import { getStreamContext } from "~/server/stream-context";
 
 export const maxDuration = 60;
@@ -67,10 +68,31 @@ export async function POST(request: Request) {
         });
       }
 
+      // Initialize Langfuse trace
+      const langfuse = getLangfuse();
+      const trace = langfuse?.trace({
+        name: "chat-completion",
+        userId: session.user.id,
+        sessionId: chatId,
+        metadata: {
+          isNewChat,
+          messageCount: messages.length,
+        },
+      });
+
       const result = streamText({
         model,
         messages,
         maxSteps: 10,
+        experimental_telemetry: {
+          isEnabled: true,
+          functionId: "chat-completion",
+          metadata: {
+            userId: session.user.id,
+            chatId: chatId,
+            isNewChat,
+          },
+        },
         system: `You are a helpful AI assistant with access to real-time web search capabilities. When answering questions:
 
 1. Always search the web for up-to-date information when relevant
@@ -100,7 +122,7 @@ Remember to use the searchWeb tool whenever you need to find current information
             },
           },
         },
-        onFinish: async ({ response }) => {
+        onFinish: async ({ response, usage }) => {
           // Merge the existing messages with the response messages
           const updatedMessages = appendResponseMessages({
             messages,
@@ -110,6 +132,25 @@ Remember to use the searchWeb tool whenever you need to find current information
           const lastMessage = messages[messages.length - 1];
           if (!lastMessage) {
             return;
+          }
+
+          // Log to Langfuse
+          if (trace) {
+            trace.generation({
+              name: "chat-completion",
+              model: "gemini-2.0-flash-exp",
+              input: messages,
+              output: response.messages,
+              usage: {
+                input: usage?.promptTokens,
+                output: usage?.completionTokens,
+                total: usage?.totalTokens,
+              },
+              metadata: {
+                maxSteps: 10,
+                responseMessageCount: response.messages.length,
+              },
+            });
           }
 
           // Save the complete chat history
@@ -158,11 +199,25 @@ export async function GET(request: Request) {
 
   const userId = session.user.id;
 
+  // Initialize Langfuse trace for stream resumption
+  const langfuse = getLangfuse();
+  const trace = langfuse?.trace({
+    name: "stream-resumption",
+    userId: userId,
+    sessionId: chatId,
+    metadata: {
+      chatId,
+    },
+  });
+
   // Check that the user is the owner of the chat and get streams
   let streams;
   try {
     streams = await getStreamsByChatId({ chatId, userId });
   } catch (error) {
+    trace?.update({
+      output: { error: "Chat not found or access denied" },
+    });
     return new Response("Chat not found or access denied", { status: 404 });
   }
 
@@ -229,6 +284,13 @@ export async function GET(request: Request) {
         type: "append-message",
         message: JSON.stringify(mostRecentMessage),
       });
+    },
+  });
+
+  trace?.update({
+    output: {
+      action: "restored-stream",
+      messageRestored: true,
     },
   });
 
