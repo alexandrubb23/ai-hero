@@ -1,4 +1,5 @@
 import type { Message } from "ai";
+import { randomUUID } from "crypto";
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
@@ -21,6 +22,10 @@ export default async function HomePage({
     isAuthenticated && session?.user?.id
       ? await getChats({ userId: session.user.id })
       : [];
+
+  // Determine chatId and isNewChat
+  const chatId = id ?? randomUUID();
+  const isNewChat = !id;
 
   // Fetch the specific chat if there's an id parameter
   let initialMessages: Message[] = [];
@@ -91,9 +96,11 @@ export default async function HomePage({
       </div>
 
       <ChatPage
+        key={chatId}
         isAuthenticated={isAuthenticated}
         userName={userName}
-        chatId={id}
+        chatId={chatId}
+        isNewChat={isNewChat}
         initialMessages={initialMessages}
       />
     </div>
