@@ -1,16 +1,10 @@
-import { PlusIcon, Sigma } from "lucide-react";
+import type { Message } from "ai";
+import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
-import { ChatPage } from "./chat.tsx";
+import { getChat, getChats } from "~/server/db/queries";
 import { AuthButton } from "../components/auth-button.tsx";
-import { SignInModal } from "~/components/sign-in-modal.tsx";
-
-const chats = [
-  {
-    id: "1",
-    title: "My First Chat",
-  },
-];
+import { ChatPage } from "./chat.tsx";
 
 export default async function HomePage({
   searchParams,
@@ -21,6 +15,30 @@ export default async function HomePage({
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+
+  // Fetch chats for the sidebar if user is authenticated
+  const chats =
+    isAuthenticated && session?.user?.id
+      ? await getChats({ userId: session.user.id })
+      : [];
+
+  // Fetch the specific chat if there's an id parameter
+  let initialMessages: Message[] = [];
+  if (id && isAuthenticated && session?.user?.id) {
+    const chat = await getChat({ userId: session.user.id, chatId: id });
+    if (chat?.messages) {
+      initialMessages = chat.messages.map((msg) => ({
+        id: msg.id,
+        // msg.role is typed as string, so we need to cast it to the correct type
+        role: msg.role as "user" | "assistant",
+        // msg.parts is typed as unknown[], so we need to cast it to the correct type
+        parts: msg.parts as Message["parts"],
+        // content is not persisted, so we can safely pass an empty string,
+        // because parts are always present, and the AI SDK will use the parts to construct the content
+        content: "",
+      }));
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -72,10 +90,11 @@ export default async function HomePage({
         </div>
       </div>
 
-      <ChatPage 
-        isAuthenticated={isAuthenticated} 
-        userName={userName} 
+      <ChatPage
+        isAuthenticated={isAuthenticated}
+        userName={userName}
         chatId={id}
+        initialMessages={initialMessages}
       />
     </div>
   );
